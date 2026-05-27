@@ -2,3 +2,4 @@ tempo
 api-gateway/node_modules
 identity-service/node_modules
 .env
+node_modules
