@@ -1,4 +1,4 @@
-requestAnimationFrame("dotenv").config();
+require("dotenv").config();
 const mongoose = require("mongoose");
 const logger = require("./utils/logger");
 const express = require("express");
@@ -6,9 +6,12 @@ const helmet = require("helmet");
 const cors = require("cors");
 const { RateLimiterRedis } = require("rate-limiter-flexible");
 const Redis = require("ioredis");
-const rateLimit = require("express-rate-limit");
-
+const { rateLimit } = require("express-rate-limit");
+const { RedisStore } = require("rate-limit-redis");
+const routes = require("./routes/identity-service");
 const app = express();
+const errorHandler = require("./middleware/errorHandler");
+const PORT = process.env.PORT || 3001;
 
 //connect to mongodb
 mongoose
@@ -56,5 +59,32 @@ const sensitiveEndpointsLimiter = rateLimit({
   max: 50,
   standardHeaders: true,
   legacyHeaders: false,
-  handler:
+  handler: (req, res) => {
+    logger.warn(`Sensitive endpoint rate limit exceeded for IP: ${req.ip}`);
+    res.status(429).json({
+      success: false,
+      message: "Too many requests",
+    });
+  },
+  store: new RedisStore({
+    sendCommand: (...args) => redisClient.call(...args),
+  }),
+});
+
+//apply this sensitiveEndpointsLimiter to our routes
+app.use("/api/auth/register", sensitiveEndpointsLimiter);
+
+//Routes
+app.use("/api/auth", routes);
+
+//error handler
+app.use(errorHandler);
+
+app.listen(PORT, () => {
+  logger.info(`Identity service running on ${PORT}`);
+});
+
+//unhandled promise rejection
+process.on("unhandledRejection", (reason, promise) => {
+  logger.error("unhandledRejection at", promise, "reason:", reason);
 });
